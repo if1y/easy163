@@ -8,6 +8,7 @@ import java.util.List;
  */
 public class Keyword
 {
+    public String id;
     public String songName;
     public List<String> singers = new ArrayList<>();
     public String extra = null; // extra songName info in (xxx)
@@ -41,7 +42,7 @@ public class Keyword
     @Override
     public String toString()
     {
-        String str = songName + ":";
+        String str = songName + "-";
         for (String singer : singers)
         {
             str += singer + '/';

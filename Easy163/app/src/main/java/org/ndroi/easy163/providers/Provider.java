@@ -1,11 +1,10 @@
 package org.ndroi.easy163.providers;
 
 import android.util.Log;
-
 import com.alibaba.fastjson.JSONObject;
 import org.ndroi.easy163.providers.utils.BitRate;
 import org.ndroi.easy163.providers.utils.KeywordMatch;
-import org.ndroi.easy163.providers.utils.ReadStream;
+import org.ndroi.easy163.utils.ReadStream;
 import org.ndroi.easy163.utils.Keyword;
 import org.ndroi.easy163.utils.Song;
 import java.io.IOException;
@@ -19,15 +18,31 @@ import java.util.List;
 
 public abstract class Provider
 {
+    protected String providerName;
     protected Keyword targetKeyword;
     protected int selectedIndex = -1;
     protected List<Keyword> candidateKeywords = new ArrayList<>();
     protected List<JSONObject> songJsonObjects = new ArrayList<>();
 
-    public Provider(Keyword targetKeyword)
+    public Provider(String providerName, Keyword targetKeyword)
     {
+        this.providerName = providerName;
         this.targetKeyword = targetKeyword;
     }
+
+    public String getProviderName()
+    {
+        return providerName;
+    };
+
+    public Keyword getSelectedKeyword()
+    {
+        if(selectedIndex == -1)
+        {
+            return null;
+        }
+        return candidateKeywords.get(selectedIndex);
+    };
 
     @Override
     public String toString()
@@ -37,26 +52,39 @@ public abstract class Provider
 
     static protected String keyword2Query(Keyword keyword)
     {
-        String str = keyword.songName;
+        String songName = keyword.songName;
+        if(songName.length() > 20)
+        {
+            songName = songName.substring(0, 20);
+            Log.d("keyword2Query", "too long songName string, truncated");
+        }
+        String singers = "";
         for (String singer : keyword.singers)
         {
-            str += (" " + singer);
+            String tmp = singers + singer + " ";
+            if(tmp.length() > 15)
+            {
+                Log.d("keyword2Query", "too long singers string, truncated");
+                break;
+            }
+            singers = tmp;
         }
+        String queryStr = songName + " " + singers;
         try
         {
-            str = URLEncoder.encode(str, "UTF-8");
+            queryStr = URLEncoder.encode(queryStr, "UTF-8");
         } catch (UnsupportedEncodingException e)
         {
             e.printStackTrace();
         }
-        return str;
+        return queryStr;
     }
 
     static private int calculateScore(Keyword candidateKeyword, Keyword targetKeyword, int index)
     {
         if(!KeywordMatch.match(candidateKeyword, targetKeyword))
         {
-            return -100;
+            return -(50 + 3*index);
         }
         int score = 5 - 3*index;
         String targetName = targetKeyword.songName.toLowerCase();
@@ -64,7 +92,7 @@ public abstract class Provider
         int candidateLen = candidateSongName.length();
         int targetLen = targetName.length();
         score -= Math.abs(candidateLen - targetLen);
-        String leftName = candidateSongName.replace(targetName, " ");
+        String leftName = candidateSongName.replace(targetName, "");
         List<String> words = Arrays.asList(
                 "live", "dj", "remix", "cover", "instrumental", "伴奏", "翻唱", "翻自"
         );
@@ -74,7 +102,7 @@ public abstract class Provider
             {
                 if(KeywordMatch.match(word, targetKeyword.extra))
                 {
-                    score = 5;
+                    score = 7;
                 }else
                 {
                     score -= 2;
@@ -88,19 +116,18 @@ public abstract class Provider
             {
                 if (KeywordMatch.match(targetSinger, candidateSinger))
                 {
-                    score += 2;
-                    score -= 2*Math.abs(targetSinger.length() - candidateSinger.length());
+                    score += 3;
+                    score -= Math.abs(targetSinger.length() - candidateSinger.length());
                 }
             }
         }
-        Log.d("calculateScore", candidateKeyword.toString() + '|' + targetKeyword.toString() + "|" + score);
         return score;
     }
 
     static public Provider selectCandidateKeywords(List<Provider> providers)
     {
         Provider bestProvider = null;
-        int maxScore = -100;
+        int maxScore = -999;
         int selectIndex = -1;
         for (Provider provider : providers)
         {
@@ -108,6 +135,7 @@ public abstract class Provider
             {
                 Keyword candidateKeyword = provider.candidateKeywords.get(i);
                 int score = calculateScore(candidateKeyword, provider.targetKeyword, i);
+                Log.d("calculateScore", provider.providerName + "|" + candidateKeyword.toString() + '|' + provider.targetKeyword.toString() + "|" + score);
                 if(score > maxScore)
                 {
                     maxScore = score;
@@ -153,7 +181,7 @@ public abstract class Provider
                     song.md5 = qqMusicMd5;
                 }
                 byte[] mp3Data = ReadStream.read(connection.getInputStream());
-                song.br = BitRate.Detect(mp3Data);
+                song.br = BitRate.detect(mp3Data);
             }
         } catch (IOException e)
         {
@@ -164,4 +192,16 @@ public abstract class Provider
 
     abstract public void collectCandidateKeywords();
     abstract public Song fetchSelectedSong();
+    abstract public Song fetchSongByJson(JSONObject jsonObject);
+
+    public static List<Provider> getProviders(Keyword targetKeyword)
+    {
+        List<Provider> providers = Arrays.asList(
+                new KuwoMusic(targetKeyword),
+                new MiguMusic(targetKeyword),
+                new QQMusic(targetKeyword)
+                //new KugouMusic(targetKeyword)
+        );
+        return providers;
+    }
 }

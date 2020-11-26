@@ -1,6 +1,7 @@
 package org.ndroi.easy163.core;
 
 import org.ndroi.easy163.utils.Keyword;
+import org.ndroi.easy163.utils.Song;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -12,27 +13,17 @@ public class Cache
     }
 
     private Map<String, Object> items = new LinkedHashMap<>();
-    private AddAction addAction = null;
+    private AddAction addAction;
 
     public Cache(AddAction addAction)
     {
         this.addAction = addAction;
     }
 
-    private void cleanExpired()
-    {
-        if (items.size() > 1000)
-        {
-            String firstKey = items.keySet().iterator().next();
-            items.remove(firstKey);
-        }
-    }
-
     public void add(String id, Object value)
     {
         synchronized (items)
         {
-            cleanExpired();
             items.put(id, value);
         }
     }
@@ -43,7 +34,8 @@ public class Cache
         {
             if (items.containsKey(id))
             {
-                return items.get(id);
+                Object value = items.get(id);
+                return value;
             }
             if (addAction == null)
             {
@@ -52,30 +44,47 @@ public class Cache
             Object value = addAction.add(id);
             if (value != null)
             {
-                items.put(id, value);
+                add(id, value);
             }
             return value;
         }
     }
 
     /* id --> Keyword */
-    public static Cache neteaseKeywords = new Cache(new AddAction()
-    {
-        @Override
-        public Object add(String id)
-        {
-            return Find.find(id);
-        }
-    });
+    public static Cache neteaseKeywords = null;
 
     /* id --> ProviderSong */
-    public static Cache providerSongs = new Cache(new AddAction()
+    public static Cache providerSongs = null;
+
+    public static void init()
     {
-        @Override
-        public Object add(String id)
+        neteaseKeywords = new Cache(new AddAction()
         {
-            Keyword keyword = (Keyword) neteaseKeywords.get(id);
-            return Search.search(keyword);
-        }
-    });
+            @Override
+            public Object add(String id)
+            {
+                return Find.find(id);
+            }
+        });
+
+        providerSongs = new Cache(new AddAction()
+        {
+            @Override
+            public Object add(String id)
+            {
+                Song song = Local.get(id);
+                if(song != null)
+                {
+                    return song;
+                }
+                Keyword keyword = (Keyword) neteaseKeywords.get(id);
+                return Search.search(keyword);
+            }
+        });
+    }
+
+    public static void clear()
+    {
+        providerSongs.items.clear();
+    }
 }

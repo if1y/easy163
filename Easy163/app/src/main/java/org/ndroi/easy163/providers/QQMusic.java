@@ -2,7 +2,8 @@ package org.ndroi.easy163.providers;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import org.ndroi.easy163.providers.utils.ReadStream;
+import org.ndroi.easy163.core.Local;
+import org.ndroi.easy163.utils.ReadStream;
 import org.ndroi.easy163.utils.Keyword;
 import org.ndroi.easy163.utils.Song;
 import java.io.IOException;
@@ -13,7 +14,7 @@ public class QQMusic extends Provider
 {
     public QQMusic(Keyword targetKeyword)
     {
-        super(targetKeyword);
+        super("qq", targetKeyword);
     }
 
     @Override
@@ -22,10 +23,10 @@ public class QQMusic extends Provider
         String query = keyword2Query(targetKeyword);
         String url = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?" +
                 "ct=24&qqmusic_ver=1298&new_json=1&remoteplace=txt.yqq.center&" +
-                "searchid=46804741196796149&t=0&aggr=1&cr=1&catZhida=1&lossless=0&" +
-                "flag_qc=0&p=1&n=20&w=" + query + "&" +
-                "g_tk=5381&jsonpCallback=MusicJsonCallback10005317669353331&loginUin=0&hostUin=0&" +
-                "format=jsonp&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq&needNewCode=0";
+                "searchid=46343560494538174&t=0&aggr=1&cr=1&catZhida=1&lossless=0&" +
+                "flag_qc=0&p=1&n=10&w=" + query + "&" +
+                "g_tk_new_20200303=5381&g_tk=5381&loginUin=0&hostUin=0&" +
+                "format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0";
         try
         {
             HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
@@ -36,9 +37,6 @@ public class QQMusic extends Provider
             {
                 byte[] content = ReadStream.read(connection.getInputStream());
                 String str = new String(content);
-                int p1 = str.indexOf('(');
-                int p2 = str.lastIndexOf(')');
-                str = str.substring(p1 + 1, p2);
                 JSONObject jsonObject = JSONObject.parseObject(str);
                 if (jsonObject.getIntValue("code") == 0)
                 {
@@ -50,6 +48,11 @@ public class QQMusic extends Provider
                         JSONObject songJsonObject = (JSONObject) infoObj;
                         int pay = songJsonObject.getJSONObject("pay").getIntValue("pay_play");
                         if (pay != 0)
+                        {
+                            continue;
+                        }
+                        int fnote = songJsonObject.getIntValue("fnote");
+                        if (fnote == 4002)
                         {
                             continue;
                         }
@@ -87,8 +90,28 @@ public class QQMusic extends Provider
         }
         JSONObject songJsonObject = songJsonObjects.get(selectedIndex);
         String mId = songJsonObject.getString("mid");
-        String mediaId = songJsonObject.getJSONObject("file").getString("media_mid");
-        String filename = "M500" + mediaId + ".mp3";
+        String mediaMId = songJsonObject.getJSONObject("file").getString("media_mid");
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put("mid", mId);
+        jsonObject.put("media_mid", mediaMId);
+        Song song = fetchSongByJson(jsonObject);
+        if(song != null)
+        {
+            Local.put(targetKeyword.id, providerName, jsonObject);
+        }
+        return song;
+    }
+
+    @Override
+    public Song fetchSongByJson(JSONObject jsonObject)
+    {
+        String mId = jsonObject.getString("mid");
+        String mediaMId = jsonObject.getString("media_mid");
+        if(mId == null || mediaMId == null)
+        {
+            return null;
+        }
+        String filename = "M500" + mediaMId + ".mp3";
         String url = "https://u.y.qq.com/cgi-bin/musicu.fcg?data=" +
                 "{\"req_0\":{\"module\":\"vkey.GetVkeyServer\"," +
                 "\"method\":\"CgiGetVkey\",\"param\":{\"guid\":\"7332953645\"," +
@@ -108,10 +131,10 @@ public class QQMusic extends Provider
             {
                 byte[] content = ReadStream.read(connection.getInputStream());
                 String str = new String(content);
-                JSONObject jsonObject = JSONObject.parseObject(str);
-                if (jsonObject.getIntValue("code") == 0)
+                JSONObject jo = JSONObject.parseObject(str);
+                if (jo.getIntValue("code") == 0)
                 {
-                    String vkey = jsonObject.getJSONObject("req_0")
+                    String vkey = jo.getJSONObject("req_0")
                             .getJSONObject("data")
                             .getJSONArray("midurlinfo")
                             .getJSONObject(0)

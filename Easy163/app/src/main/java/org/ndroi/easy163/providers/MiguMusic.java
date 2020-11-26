@@ -1,29 +1,26 @@
 package org.ndroi.easy163.providers;
 
-import android.util.Log;
-
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import org.ndroi.easy163.providers.utils.KeywordMatch;
+
+import org.ndroi.easy163.core.Local;
 import org.ndroi.easy163.providers.utils.MiguCrypto;
-import org.ndroi.easy163.providers.utils.ReadStream;
+import org.ndroi.easy163.utils.ReadStream;
 import org.ndroi.easy163.utils.ConcurrencyTask;
 import org.ndroi.easy163.utils.Keyword;
 import org.ndroi.easy163.utils.Song;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class MiguMusic extends Provider
 {
     public MiguMusic(Keyword targetKeyword)
     {
-        super(targetKeyword);
+        super("migu", targetKeyword);
     }
 
     private void setHttpHeader(HttpURLConnection connection)
@@ -52,6 +49,10 @@ public class MiguMusic extends Provider
                 String str = new String(content);
                 JSONObject jsonObject = JSONObject.parseObject(str);
                 JSONArray candidates = jsonObject.getJSONArray("musics");
+                if(candidates == null)
+                {
+                    return;
+                }
                 for (Object infoObj : candidates)
                 {
                     JSONObject songJSONObject = (JSONObject) infoObj;
@@ -90,7 +91,7 @@ public class MiguMusic extends Provider
                 if (code.equals("000000"))
                 {
                     String songUrl = jsonObject.getJSONObject("data").getString("playUrl");
-                    if(songUrl == null)
+                    if(songUrl == null || songUrl.isEmpty())
                     {
                         return;
                     }
@@ -119,6 +120,20 @@ public class MiguMusic extends Provider
         }
         JSONObject songJsonObject = songJsonObjects.get(selectedIndex);
         String mId = songJsonObject.getString("copyrightId");
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put("mid", mId);
+        Song song = fetchSongByJson(jsonObject);
+        if(song != null)
+        {
+            Local.put(targetKeyword.id, providerName, jsonObject);
+        }
+        return song;
+    }
+
+    @Override
+    public Song fetchSongByJson(JSONObject jsonObject)
+    {
+        String mId = jsonObject.getString("mid");
         ConcurrencyTask concurrencyTask = new ConcurrencyTask();
         Map<String, String> typeSongUrls = new HashMap<>();
         for (String type : new String[]{"1", "2"})

@@ -1,67 +1,111 @@
 package org.ndroi.easy163.ui;
 
+import android.app.ActivityManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.Uri;
 import android.net.VpnService;
 import android.os.Bundle;
-import android.support.design.widget.NavigationView;
-import android.support.v4.content.LocalBroadcastManager;
-import android.support.v4.view.GravityCompat;
-import android.support.v4.widget.DrawerLayout;
-import android.support.v7.app.ActionBarDrawerToggle;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.Toolbar;
+import com.google.android.material.navigation.NavigationView;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+import androidx.core.view.GravityCompat;
+import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.appcompat.app.ActionBarDrawerToggle;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
 import android.util.Log;
 import android.view.MenuItem;
 import android.widget.CompoundButton;
 import android.widget.Toast;
 import android.widget.ToggleButton;
+import org.ndroi.easy163.BuildConfig;
 import org.ndroi.easy163.R;
-import org.ndroi.easy163.core.Server;
+import org.ndroi.easy163.core.Cache;
+import org.ndroi.easy163.core.Local;
+import org.ndroi.easy163.utils.EasyLog;
 import org.ndroi.easy163.vpn.LocalVPNService;
-
-import static android.support.v7.app.AlertDialog.Builder;
+import static androidx.appcompat.app.AlertDialog.Builder;
 
 public class MainActivity extends AppCompatActivity
         implements NavigationView.OnNavigationItemSelectedListener, ToggleButton.OnCheckedChangeListener
 {
     private static final int VPN_REQUEST_CODE = 0x0F;
-    private boolean waitingForVPNStart;
+    private ToggleButton toggleButton = null;
+    private static boolean isBroadcastReceived = false; // workaround for multi-receive
+    public static void resetBroadcastReceivedState()
+    {
+        isBroadcastReceived = false;
+    }
+
+    private BroadcastReceiver serviceReceiver = new BroadcastReceiver()
+    {
+        @Override
+        public void onReceive(Context context, Intent intent)
+        {
+            if (isBroadcastReceived) return;
+            isBroadcastReceived = true;
+            boolean isServiceRunning = intent.getBooleanExtra("isRunning", false);
+            Log.d("MainActivity", "BroadcastReceiver service isRunning: " + isServiceRunning);
+            toggleButton.setChecked(isServiceRunning);
+            if(isServiceRunning)
+            {
+                EasyLog.log("Easy163 VPN 正在运行");
+                EasyLog.log("版本更新关注 Github Release");
+            }else
+            {
+                EasyLog.log("Easy163 VPN 停止运行");
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
         super.onCreate(savedInstanceState);
+        LocalBroadcastManager.getInstance(this).registerReceiver(serviceReceiver, new IntentFilter("service"));
         setContentView(R.layout.activity_main);
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+        Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
-        DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
+        DrawerLayout drawer = findViewById(R.id.drawer_layout);
         ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
                 this, drawer, toolbar, R.string.navigation_drawer_open, R.string.navigation_drawer_close);
         drawer.addDrawerListener(toggle);
         toggle.syncState();
-        NavigationView navigationView = (NavigationView) findViewById(R.id.nav_view);
+        NavigationView navigationView = findViewById(R.id.nav_view);
         navigationView.setNavigationItemSelectedListener(this);
-        ToggleButton toggleButton = findViewById(R.id.bt_start);
+        toggleButton = findViewById(R.id.bt_start);
         toggleButton.setOnCheckedChangeListener(this);
-        Server.getInstance().start();
+        EasyLog.setTextView(findViewById(R.id.log));
+        syncServiceState();
+    }
+
+    @Override
+    protected void onDestroy()
+    {
+        super.onDestroy();
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(serviceReceiver);
     }
 
     @Override
     public void onBackPressed()
     {
-        DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
+        DrawerLayout drawer = findViewById(R.id.drawer_layout);
         if (drawer.isDrawerOpen(GravityCompat.START))
         {
             drawer.closeDrawer(GravityCompat.START);
         } else
         {
-            super.onBackPressed();
+            //super.onBackPressed();
+            Intent intent = new Intent(Intent.ACTION_MAIN);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.addCategory(Intent.CATEGORY_HOME);
+            startActivity(intent);
         }
     }
 
-    @SuppressWarnings("StatementWithEmptyBody")
     @Override
     public boolean onNavigationItemSelected(MenuItem item)
     {
@@ -76,9 +120,9 @@ public class MainActivity extends AppCompatActivity
             Builder builder = new Builder(this);
             builder.setTitle("使用说明");
             builder.setMessage("开启本软件 VPN 服务后即可使用\n" +
-                    "如无法使用请重启音乐软件\n" +
-                    "如遇到设备网络异常请关闭本软件\n" +
-                    "版本更新请关注 Github Release");
+                    "如无法启动 VPN 尝试重启手机\n" +
+                    "出现异常问题尝试情况软件缓存\n" +
+                    "更多问题请查阅 Github");
             builder.setNegativeButton("取消", new DialogInterface.OnClickListener()
             {
                 @Override
@@ -92,7 +136,10 @@ public class MainActivity extends AppCompatActivity
         {
             Builder builder = new Builder(this);
             builder.setTitle("免责声明");
-            builder.setMessage("本软件为实验性项目\n仅提供技术研究使用\n请勿用于非法用途");
+            builder.setMessage("本软件为实验性项目\n" +
+                    "仅提供技术研究使用\n" +
+                    "本软件完全免费\n" +
+                    "作者不承担用户因软件造成的一切责任");
             builder.setNegativeButton("取消", new DialogInterface.OnClickListener()
             {
                 @Override
@@ -102,11 +149,17 @@ public class MainActivity extends AppCompatActivity
                 }
             });
             builder.show();
-        } else if (id == R.id.nav_donate)
+        } else if (id == R.id.nav_clear_cache)
+        {
+            Cache.clear();
+            Local.clear();
+            Toast.makeText(this, "缓存已清除", Toast.LENGTH_SHORT).show();
+        } else if (id == R.id.nav_about)
         {
             Builder builder = new Builder(this);
-            builder.setTitle("捐赠支持");
-            builder.setMessage("暂未开放捐赠\n欢迎 Github 点赞支持");
+            builder.setTitle("关于");
+            builder.setMessage("当前版本 " + BuildConfig.VERSION_NAME + "\n" +
+                    "版本更新关注 Github Release");
             builder.setNegativeButton("取消", new DialogInterface.OnClickListener()
             {
                 @Override
@@ -117,7 +170,7 @@ public class MainActivity extends AppCompatActivity
             });
             builder.show();
         }
-        DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
+        DrawerLayout drawer = findViewById(R.id.drawer_layout);
         drawer.closeDrawer(GravityCompat.START);
         return true;
     }
@@ -134,6 +187,13 @@ public class MainActivity extends AppCompatActivity
         }
     }
 
+    private void syncServiceState()
+    {
+        Intent intent = new Intent("control");
+        intent.putExtra("cmd", "check");
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+    }
+
     private void startVPN()
     {
         Intent vpnIntent = VpnService.prepare(this);
@@ -145,7 +205,9 @@ public class MainActivity extends AppCompatActivity
 
     private void stopVPN()
     {
-        LocalBroadcastManager.getInstance(this).sendBroadcast(new Intent("stop"));
+        Intent intent = new Intent("control");
+        intent.putExtra("cmd", "stop");
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
         Log.d("stopVPN", "try to stopVPN");
     }
 
@@ -155,10 +217,8 @@ public class MainActivity extends AppCompatActivity
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == VPN_REQUEST_CODE && resultCode == RESULT_OK)
         {
-            waitingForVPNStart = true;
             Intent intent = new Intent(this, LocalVPNService.class);
             startService(intent);
-            Toast.makeText(this, "开启 VPN 服务成功", Toast.LENGTH_SHORT).show();
         }
     }
 }
